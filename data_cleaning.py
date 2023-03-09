@@ -8,7 +8,7 @@ spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
 
 def read_in_data():
     '''
-    Iterates through the files in the data directory, and converts them to spark data structures.
+    Iterates through the files in the data directory, and converts them to spark data structures
     ------------------------------------------------------
     Returns a dict of dicts {{}}, where the top level keys are:
     - 'data' (files for train, test, val)
