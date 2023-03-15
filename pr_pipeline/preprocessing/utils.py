@@ -5,6 +5,10 @@ import string
 from pyspark.sql.functions import col, udf
 from pyspark.sql.types import StringType
 
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number
+
+
 
 def remove_html(text):
     html = re.compile(r"<.*?>")
@@ -51,3 +55,17 @@ def multi_clean_text(col_names):
         return df
 
     return inner
+
+def get_most_freq_val_for_group(data_df, grouping_col: str, col_to_impute: str, filter_value):
+    '''
+    Returns most frequent value for 'col_to_impute' within a grouping by 'grouping_col',
+    where the 'grouping_col' has the value `filter_value`.
+    '''
+    grouped = data_df.groupBy(grouping_col, col_to_impute).count().where(col(grouping_col) == filter_value)
+    window = Window.partitionBy(grouping_col).orderBy(col('count').desc())
+    grouped\
+        .withColumn('order', row_number().over(window))\
+        .where(col('order') == 1)\
+        .show()
+
+
