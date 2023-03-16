@@ -149,6 +149,7 @@ def clean_data(path_to_data: str):
     df.select('product_parent').where(df.product_id == "B0000251VP").show()
     print('******')
     most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
+    print(most_freq_parent)
 
 
 

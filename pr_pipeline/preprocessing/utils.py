@@ -58,14 +58,18 @@ def multi_clean_text(col_names):
 
 def get_most_freq_val_for_group(data_df, grouping_col: str, col_to_impute: str, filter_value):
     '''
+    This can be used for imputing: if a review for product X is missing a column Y value, there might be another review for X
+    that has thos Y value --> we take it from there.
+    ------
     Returns most frequent value for 'col_to_impute' within a grouping by 'grouping_col',
     where the 'grouping_col' has the value `filter_value`.
     '''
-    grouped = data_df.groupBy(grouping_col, col_to_impute).count().where(col(grouping_col) == filter_value)
+    grouped = data_df.groupBy(grouping_col, col_to_impute).count().where((col(grouping_col) == filter_value) & col(col_to_impute).isNotNull())
     window = Window.partitionBy(grouping_col).orderBy(col('count').desc())
-    grouped\
+    return grouped\
         .withColumn('order', row_number().over(window))\
         .where(col('order') == 1)\
-        .show()
+        .first()[f'{col_to_impute}']
+      
 
 
