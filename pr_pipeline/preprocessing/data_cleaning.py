@@ -96,7 +96,7 @@ def stack_csvs(paths: list):
             .option("inferSchema", True)
             .option("quote", '"')
             .option("escape", '"')
-            .csv(paths[0], header=True, inferSchema=True)
+            .csv(t, header=True, inferSchema=True)
         )
         stacked_df = stacked_df.union(df_pyspark)
     return stacked_df
@@ -149,6 +149,9 @@ def clean_data(path_to_data: str):
 
     # all_data_map["data"]["train"].select('review_body').limit(10).show()
 
+    # drop rows with missing review body
+    # drop rows with missing review date
+
     # convert all empty strings to null
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = convert_empty_str_to_null(all_data_map['data'][label])
@@ -162,7 +165,7 @@ def clean_data(path_to_data: str):
 
     # impute missing review headline
     for label in all_data_map['data'].keys():
-        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', 'missing headline')
+        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', '')
 
     # --> put this last: drop product id column entirely
     print('&&&&&&&&&&&&&&& AFTER CLEANING &&&&&&&&&&&&&&&&&&')
