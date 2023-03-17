@@ -1,12 +1,15 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
-from utils import multi_clean_text, get_most_freq_val_for_group
+from .utils import multi_clean_text, get_most_freq_val_for_group, show_missing_values_report, convert_empty_str_to_null, drop_na_for_col, impute_placeholder_when_null_or_empty
 import os
-from pyspark.sql.functions import col,isnan, when, count
+from pyspark.sql.functions import col, isnan, when, count, udf
+from pyspark.sql.types import StringType
+
 
 
 spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
+spark.sparkContext.setLogLevel("ERROR")
 
 
 def read_in_data(path_to_data: str):
@@ -52,7 +55,7 @@ def read_in_data(path_to_data: str):
     return {"data": data_spark, "aux": data_spark_aux}
 
 
-def read_category(full_path):
+def read_category(full_path: str):
     """Converts the categories to a pyspark df"""
     return spark.read.option("multiline", "false").json(full_path)
 
@@ -106,7 +109,6 @@ def clean_reviews(spark_df, columns: list):
 
 
 
-
 # COLUMNS CLEAN/IMPUTE TASK SPLIT:
     # O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
     # O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
@@ -126,30 +128,46 @@ def clean_data(path_to_data: str):
     """Loads and cleans the data"""
     all_data_map = read_in_data(path_to_data)
 
-    # this part should stay here, commented out during implementaton
-    # this cleans the reviews column
+    # this cleans all the String columns, which are review_body, review_headline, and product_title
     # all_data_map["data"]["train"] = clean_reviews(
     #     all_data_map["data"]["train"],
     #     ["product_title", "review_headline", "review_body"],
     # )
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = clean_reviews(
+            all_data_map["data"][label],
+            ["product_title", "review_headline", "review_body"],
+        )
 
-    # print(all_data_map["data"]["train"].show(20))
+    # all_data_map["data"]["train"].select('review_body').limit(10).show()
 
-    # convert all these string cols that should be bool to bool: string, string
-    
+    # convert all empty strings to null
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = convert_empty_str_to_null(all_data_map['data'][label])
 
-    
-    
-    print(all_data_map["data"]["train"].columns)
-    df = all_data_map["data"]["train"]
+    # show initial report
+    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+  
+    # product_title has very few missing values, so we'll just drop them across train, test, and validation sets
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'product_title')
 
-    # this is just to test sth, and i'll remove it soon (pushed so that Oumayma can see how to use the function)
-    df.groupBy("product_id").count().where("count > 1").drop("count").show()
-    print('******')
-    df.select('product_parent').where(df.product_id == "B0000251VP").show()
-    print('******')
-    most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
-    print(most_freq_parent)
+    # impute missing review headline
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', 'missing headline')
+
+    # --> put this last: drop product id column entirely
+    print('&&&&&&&&&&&&&&& AFTER CLEANING REPORT &&&&&&&&&&&&&&&&&&')
+    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+
+    # # this is just to test sth, and i'll remove it soon (pushed so that Oumayma can see how to use the function)
+    # df.groupBy("product_id").count().where("count > 1").drop("count").show()
+    # print('******')
+    # df.select('product_parent').where(df.product_id == "B0000251VP").show()
+    # print('******')
+    # most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
+    # print(most_freq_parent)
 
 
 

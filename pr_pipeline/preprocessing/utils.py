@@ -2,11 +2,9 @@ import re
 import string
 
 # Convert function to udf
-from pyspark.sql.functions import col, udf
+from pyspark.sql.functions import col, udf, row_number, isnan, when, count
 from pyspark.sql.types import StringType
-
 from pyspark.sql.window import Window
-from pyspark.sql.functions import row_number
 
 
 
@@ -70,6 +68,62 @@ def get_most_freq_val_for_group(data_df, grouping_col: str, col_to_impute: str, 
         .withColumn('order', row_number().over(window))\
         .where(col('order') == 1)\
         .first()[f'{col_to_impute}']
+
+
+def impute_placeholder_when_null_or_empty(df, col_to_impute, placeholder):
+    '''Replacs missing or empty string with placeholder value'''
+    df = df.withColumn(col_to_impute, when(col(col_to_impute).isNull() | (df[col_to_impute] == ''), placeholder).otherwise(df[col_to_impute]))
+    return df
+
+
+def convert_empty_str_to_null(df):
+    '''
+    Convert empty strings in all string columns to null
+    '''
+    string_cols = [c[0] for c in df.dtypes if c[1] == 'string']
+    for col in string_cols:
+        df = df.withColumn(col, when(df[col] == '', None).otherwise(df[col]))
+    return df
+
+
+def drop_na_for_col(df, column_name):
+    '''Drops rows that have the value null at a specific column'''
+    df = df.dropna(subset=[column_name], how="all")
+    return df
+
+
+def missing_vals_report_numeric(df):
+    '''Shows num of missing values / col for all number cols'''
+    included_types =  ['short', 'int', 'float', 'long', 'byte', 'double', 'decimal', 'numeric']
+    return df.select([count(when(isnan(c) | col(c).isNull(), c)).alias(c) for c, t in df.dtypes if t in included_types])
+
+
+def missing_vals_report_categorical(df):
+    '''Shows num of missing values / col for all categorical cols'''
+    included_types = ['boolean', 'string', 'date', 'timestamp']
+    return df.select([count(when(col(c).isNull() | (df[c] == ''), c)).alias(c) for c, t in df.dtypes if t in included_types])
+
+
+def show_missing_values_report(train_df, test_df, val_df):
+    '''Displays a missing values report for each col of all three datasets, in the form of tables'''
+
+    print('******************* TRAIN *********************')
+    print('----- NUMERIC -----')
+    missing_vals_report_numeric(train_df).show()
+    print('----- CATEGORICAL -----')
+    missing_vals_report_categorical(train_df).show()
+
+    print('******************* TEST *********************')
+    print('----- NUMERIC -----')
+    missing_vals_report_numeric(test_df).show()
+    print('----- CATEGORICAL -----')
+    missing_vals_report_categorical(test_df).show()
+
+    print('******************* VAL *********************')
+    print('----- NUMERIC -----')
+    missing_vals_report_numeric(val_df).show()
+    print('----- CATEGORICAL -----')
+    missing_vals_report_categorical(val_df).show()
       
 
 
