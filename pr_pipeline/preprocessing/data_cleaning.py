@@ -1,12 +1,17 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
-from .utils import multi_clean_text, get_most_freq_val_for_group
+
+from .utils import multi_clean_text, get_most_freq_val_for_group, show_missing_values_report, convert_empty_str_to_null, drop_na_for_col, impute_placeholder_when_null_or_empty
 import os
-from pyspark.sql.functions import col, isnan, when, count
+from pyspark.sql.functions import col, isnan, when, count, udf
+from pyspark.sql.types import StringType
+
+
 
 
 spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
+spark.sparkContext.setLogLevel("ERROR")
 
 
 def read_in_data(path_to_data: str):
@@ -52,9 +57,10 @@ def read_in_data(path_to_data: str):
     return {"data": data_spark, "aux": data_spark_aux}
 
 
-def read_category(full_path):
+def read_category(full_path: str):
     """Converts the categories to a pyspark df"""
-    return spark.read.option("multiline", "false").json(full_path)
+    df = spark.read.option("multiline", "false").json(full_path)
+    return df.withColumnRenamed('name', 'product_category')
 
 
 def read_marketplace(full_path: str):
@@ -71,9 +77,10 @@ def read_marketplace(full_path: str):
     # we use zip to zip the row-level pairs of id and name before using explode
     # the zip, under this new fake column, will generate a list of pairs like {0, null}, {1, UK}, ...
     # we then explode this list of pairs, so that we make 2 columns, one for each pair item
-    return df.withColumn("id_name", F.explode(F.arrays_zip("id", "name"))).select(
+    df = df.withColumn("id_name", F.explode(F.arrays_zip("id", "name"))).select(
         "id_name.id", "id_name.name"
     )
+    return df.withColumnRenamed('name', 'marketplace')
 
 
 def stack_csvs(paths: list):
@@ -100,6 +107,7 @@ def clean_reviews(spark_df, columns: list):
     return multi_clean_text(columns)(spark_df)
 
 
+
 # COLUMNS CLEAN/IMPUTE TASK SPLIT:
 # O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
 # O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
@@ -107,37 +115,77 @@ def clean_reviews(spark_df, columns: list):
 # O-vine: get most frequent value for that product id
 # O-verified_purchase: most frequent value for that product id
 
+
 # L-review_headline: if missing set to 'no headline' or drop, depending on case
 # review_body: Julio's code handles that
 # L-review date: get most frequent timestamp for reviews on this product id, or drop if no products with the same id have a date
 # L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
 # L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
 
+def join(data, aux, left_on, right_on):
+    joined_df = data.join(aux, col(left_on) == col(right_on))
+    joined_df = joined_df.drop(right_on) # dropping the joining col cause we have it under another name
+    return joined_df
+
 
 def clean_data(path_to_data: str):
     """Loads and cleans the data"""
     all_data_map = read_in_data(path_to_data)
 
-    all_data_map["data"]["train"] = clean_reviews(
-        all_data_map["data"]["train"],
-        ["product_title", "review_headline", "review_body"],
-    )
-    print(all_data_map["data"]["train"].show())
+    # clean text columns
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = clean_reviews(
+            all_data_map["data"][label],
+            ["product_title", "review_headline", "review_body"],
+        )
 
-    # convert all these string cols that should be bool to bool: string, string
 
-    """
-    print(all_data_map["data"]["train"].columns)
-    df = all_data_map["data"]["train"]
+    # convert all empty strings to null
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = convert_empty_str_to_null(all_data_map['data'][label])
 
-    # this is just to test sth, and i'll remove it soon (pushed so that Oumayma can see how to use the function)
-    df.groupBy("product_id").count().where("count > 1").drop("count").show()
-    print('******')
-    df.select('product_parent').where(df.product_id == "B0000251VP").show()
-    print('******')
-    most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
-    print(most_freq_parent)
-    """
+    # show initial report
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+  
+
+    # product_title has very few missing values, so we'll just drop them across train, test, and validation sets
+    # same for the few instances of missing review_body and review_date
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'product_title')
+        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'review_body')
+        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'review_date')
+
+    # impute missing review headline
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', '')
+
+    # --> put this last: drop product id column entirely
+    # print('&&&&&&&&&&&&&&& AFTER CLEANING &&&&&&&&&&&&&&&&&&')
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+        # join aux data
+    for label in all_data_map['data'].keys():
+        # product category aux data
+        all_data_map['data'][label] = join(all_data_map['data'][label],
+                                         all_data_map['aux']['category'],
+                                         'product_category_id', 'id')
+        # marketplace aux data
+        all_data_map['data'][label] = join(all_data_map['data'][label],
+                                         all_data_map['aux']['marketplace'],
+                                         'marketplace_id', 'id')
+        
+    # print('&&&&&&&&&&&&&&& AFTER JOINING &&&&&&&&&&&&&&&&&&')    
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'marketplace', 'UNDEFINED')
+
+    # print('&&&&&&&&&&&&&&& AFTER IMPUTING MARKETPLACE &&&&&&&&&&&&&&&&&&')   
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+    return all_data_map
+
+
 
 
 if __name__ == "__main__":
