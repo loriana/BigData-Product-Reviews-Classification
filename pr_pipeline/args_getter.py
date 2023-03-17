@@ -24,6 +24,13 @@ def get_args():
     )
 
     parser.add_argument(
+        "--missing-val-report",
+        required=False,
+        action="store_true",
+        help="Shows a report with the num of nan/null values per column in the train/test/val datasets",
+    )
+
+    parser.add_argument(
         "--verbosity",
         required=False,
         action="store_true",
