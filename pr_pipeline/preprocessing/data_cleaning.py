@@ -128,6 +128,11 @@ def join(data, aux, left_on, right_on):
     return joined_df
 
 
+def show_missing_vals(path_to_data: str):
+    all_data_map = read_in_data(path_to_data)
+    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+
 def clean_data(path_to_data: str):
     """Loads and cleans the data"""
     all_data_map = read_in_data(path_to_data)
