@@ -1,9 +1,9 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
-from utils import multi_clean_text, get_most_freq_val_for_group
+from .utils import multi_clean_text, get_most_freq_val_for_group
 import os
-from pyspark.sql.functions import col,isnan, when, count
+from pyspark.sql.functions import col, isnan, when, count
 
 
 spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
@@ -45,7 +45,7 @@ def read_in_data(path_to_data: str):
         elif "marketplace" in file_name:
             data_spark_aux[file_name] = read_marketplace(full_path)
 
-    data_spark["train"] = stack_csvs(train_paths)
+    data_spark["train"] = stack_csvs(train_paths).drop("c0")
     data_spark["test"] = stack_csvs(test_paths)
     data_spark["validation"] = stack_csvs(validation_paths)
 
@@ -79,19 +79,15 @@ def read_marketplace(full_path: str):
 def stack_csvs(paths: list):
     """Concatenates (join) multiple csvs together"""
     stacked_df = (
-        spark.read.option("header", True)
-        .option("inferSchema", True)
-        .option("quote", '"')
+        spark.read.option("quote", '"')
         .option("escape", '"')
         .csv(paths[0], header=True, inferSchema=True)
     )
     for t in paths[:-1]:
         df_pyspark = (
-            spark.read.option("header", True)
-            .option("inferSchema", True)
-            .option("quote", '"')
+            spark.read.option("quote", '"')
             .option("escape", '"')
-            .csv(paths[0], header=True, inferSchema=True)
+            .csv(t, header=True, inferSchema=True)
         )
         stacked_df = stacked_df.union(df_pyspark)
     return stacked_df
@@ -104,42 +100,33 @@ def clean_reviews(spark_df, columns: list):
     return multi_clean_text(columns)(spark_df)
 
 
-
-
-
 # COLUMNS CLEAN/IMPUTE TASK SPLIT:
-    # O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
-    # O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
-    # O-product title: get the title of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no title"
-    # O-vine: get most frequent value for that product id
-    # O-verified_purchase: most frequent value for that product id
+# O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
+# O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
+# O-product title: get the title of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no title"
+# O-vine: get most frequent value for that product id
+# O-verified_purchase: most frequent value for that product id
 
-    # L-review_headline: if missing set to 'no headline' or drop, depending on case
-    # review_body: Julio's code handles that
-    # L-review date: get most frequent timestamp for reviews on this product id, or drop if no products with the same id have a date
-    # L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
-    # L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
-
+# L-review_headline: if missing set to 'no headline' or drop, depending on case
+# review_body: Julio's code handles that
+# L-review date: get most frequent timestamp for reviews on this product id, or drop if no products with the same id have a date
+# L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
+# L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
 
 
 def clean_data(path_to_data: str):
     """Loads and cleans the data"""
     all_data_map = read_in_data(path_to_data)
 
-    # this part should stay here, commented out during implementaton
-    # this cleans the reviews column
-    # all_data_map["data"]["train"] = clean_reviews(
-    #     all_data_map["data"]["train"],
-    #     ["product_title", "review_headline", "review_body"],
-    # )
-
-    # print(all_data_map["data"]["train"].show(20))
+    all_data_map["data"]["train"] = clean_reviews(
+        all_data_map["data"]["train"],
+        ["product_title", "review_headline", "review_body"],
+    )
+    print(all_data_map["data"]["train"].show())
 
     # convert all these string cols that should be bool to bool: string, string
-    
 
-    
-    
+    """
     print(all_data_map["data"]["train"].columns)
     df = all_data_map["data"]["train"]
 
@@ -150,13 +137,8 @@ def clean_data(path_to_data: str):
     print('******')
     most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
     print(most_freq_parent)
-
+    """
 
 
 if __name__ == "__main__":
     clean_data(path_to_data="data")
-
-
-
-
-
