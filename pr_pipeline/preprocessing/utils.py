@@ -111,7 +111,7 @@ def missing_vals_report_numeric(df):
 def missing_vals_report_categorical(df):
     '''Shows num of missing values / col for all categorical cols'''
     included_types = ['boolean', 'string', 'date', 'timestamp']
-    return df.select([count(when(col(c).isNull() | (df[c] == ''), c)).alias(c) for c, t in df.dtypes if t in included_types])
+    return df.select([count(when(col(c).isNull(), c)).alias(c) for c, t in df.dtypes if t in included_types])
 
 
 def show_missing_values_report(train_df, test_df, val_df):
@@ -136,4 +136,23 @@ def show_missing_values_report(train_df, test_df, val_df):
     missing_vals_report_categorical(val_df).show()
       
 
+
+
+
+# impute_same_ID_val_UDF = udf(lambda x: get_most_freq_val_for_group(x.df, x.grouping_col, x.col_to_impute, x.grouping_col_filter), StringType())
+
+
+# def impute_by_id_group(df, col_to_impute, placeholder):
+#     df.select(['product_id', 'product_title']).where(col('product_title').isNull() | (df['product_title'] == '')).show()
+#     prod_ids_missing_title = df.select(['product_id', 'product_title']).where(col('product_title').isNull() | (df['product_title'] == ''))
+#     prod_ids_list = [r.product_id for r in prod_ids_missing_title.collect()]
+    
+#     df = df.withColumn('product_id', when(col('product_title').isNull(), impute_same_ID_val_UDF(df, 'product_id', 
+#                                                                                                 'product_title', 
+#                                                                                                 df['product_id'])).otherwise(df['product_title']))
+
+#     df.select(['product_id', 'product_title']).where(df['product_id'].isin(prod_ids_list)).show()
+#     return df
+
+    
 

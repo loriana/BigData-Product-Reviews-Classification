@@ -132,13 +132,6 @@ def clean_data(path_to_data: str):
     """Loads and cleans the data"""
     all_data_map = read_in_data(path_to_data)
 
-
-    # this cleans all the String columns, which are review_body, review_headline, and product_title
-    # all_data_map["data"]["train"] = clean_reviews(
-    #     all_data_map["data"]["train"],
-    #     ["product_title", "review_headline", "review_body"],
-    # )
-
     # clean text columns
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = clean_reviews(
@@ -146,29 +139,29 @@ def clean_data(path_to_data: str):
             ["product_title", "review_headline", "review_body"],
         )
 
-    # all_data_map["data"]["train"].select('review_body').limit(10).show()
-
-    # drop rows with missing review body
-    # drop rows with missing review date
 
     # convert all empty strings to null
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = convert_empty_str_to_null(all_data_map['data'][label])
 
     # show initial report
-    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
   
+
     # product_title has very few missing values, so we'll just drop them across train, test, and validation sets
+    # same for the few instances of missing review_body and review_date
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'product_title')
+        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'review_body')
+        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'review_date')
 
     # impute missing review headline
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', '')
 
     # --> put this last: drop product id column entirely
-    print('&&&&&&&&&&&&&&& AFTER CLEANING &&&&&&&&&&&&&&&&&&')
-    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+    # print('&&&&&&&&&&&&&&& AFTER CLEANING &&&&&&&&&&&&&&&&&&')
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
         # join aux data
     for label in all_data_map['data'].keys():
@@ -181,14 +174,14 @@ def clean_data(path_to_data: str):
                                          all_data_map['aux']['marketplace'],
                                          'marketplace_id', 'id')
         
-    print('&&&&&&&&&&&&&&& AFTER JOINING &&&&&&&&&&&&&&&&&&')    
-    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+    # print('&&&&&&&&&&&&&&& AFTER JOINING &&&&&&&&&&&&&&&&&&')    
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'marketplace', 'UNDEFINED')
 
-    print('&&&&&&&&&&&&&&& AFTER IMPUTING MARKETPLACE &&&&&&&&&&&&&&&&&&')   
-    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+    # print('&&&&&&&&&&&&&&& AFTER IMPUTING MARKETPLACE &&&&&&&&&&&&&&&&&&')   
+    # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
     return all_data_map
 
