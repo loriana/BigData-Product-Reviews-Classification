@@ -58,6 +58,8 @@ def get_most_freq_val_for_group(data_df, grouping_col: str, col_to_impute: str, 
     '''
     This can be used for imputing: if a review for product X is missing a column Y value, there might be another review for X
     that has thos Y value --> we take it from there.
+
+    Usage example: most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
     ------
     Returns most frequent value for 'col_to_impute' within a grouping by 'grouping_col',
     where the 'grouping_col' has the value `filter_value`.

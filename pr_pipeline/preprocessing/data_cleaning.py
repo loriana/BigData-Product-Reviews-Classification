@@ -57,7 +57,8 @@ def read_in_data(path_to_data: str):
 
 def read_category(full_path: str):
     """Converts the categories to a pyspark df"""
-    return spark.read.option("multiline", "false").json(full_path)
+    df = spark.read.option("multiline", "false").json(full_path)
+    return df.withColumnRenamed('name', 'product_category')
 
 
 def read_marketplace(full_path: str):
@@ -74,9 +75,10 @@ def read_marketplace(full_path: str):
     # we use zip to zip the row-level pairs of id and name before using explode
     # the zip, under this new fake column, will generate a list of pairs like {0, null}, {1, UK}, ...
     # we then explode this list of pairs, so that we make 2 columns, one for each pair item
-    return df.withColumn("id_name", F.explode(F.arrays_zip("id", "name"))).select(
+    df = df.withColumn("id_name", F.explode(F.arrays_zip("id", "name"))).select(
         "id_name.id", "id_name.name"
     )
+    return df.withColumnRenamed('name', 'marketplace')
 
 
 def stack_csvs(paths: list):
@@ -122,6 +124,10 @@ def clean_reviews(spark_df, columns: list):
     # L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
     # L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
 
+def join(data, aux, left_on, right_on):
+    joined_df = data.join(aux, col(left_on) == col(right_on))
+    joined_df = joined_df.drop(right_on) # dropping the joining col cause we have it under another name
+    return joined_df
 
 
 def clean_data(path_to_data: str):
@@ -133,6 +139,8 @@ def clean_data(path_to_data: str):
     #     all_data_map["data"]["train"],
     #     ["product_title", "review_headline", "review_body"],
     # )
+
+    # clean text columns
     for label in all_data_map['data'].keys():
         all_data_map['data'][label] = clean_reviews(
             all_data_map["data"][label],
@@ -157,17 +165,30 @@ def clean_data(path_to_data: str):
         all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', 'missing headline')
 
     # --> put this last: drop product id column entirely
-    print('&&&&&&&&&&&&&&& AFTER CLEANING REPORT &&&&&&&&&&&&&&&&&&')
+    print('&&&&&&&&&&&&&&& AFTER CLEANING &&&&&&&&&&&&&&&&&&')
     show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
+        # join aux data
+    for label in all_data_map['data'].keys():
+        # product category aux data
+        all_data_map['data'][label] = join(all_data_map['data'][label],
+                                         all_data_map['aux']['category'],
+                                         'product_category_id', 'id')
+        # marketplace aux data
+        all_data_map['data'][label] = join(all_data_map['data'][label],
+                                         all_data_map['aux']['marketplace'],
+                                         'marketplace_id', 'id')
+        
+    print('&&&&&&&&&&&&&&& AFTER JOINING &&&&&&&&&&&&&&&&&&')    
+    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
-    # # this is just to test sth, and i'll remove it soon (pushed so that Oumayma can see how to use the function)
-    # df.groupBy("product_id").count().where("count > 1").drop("count").show()
-    # print('******')
-    # df.select('product_parent').where(df.product_id == "B0000251VP").show()
-    # print('******')
-    # most_freq_parent = get_most_freq_val_for_group(df, 'product_id', 'product_parent', 'B0000251VP')
-    # print(most_freq_parent)
+    for label in all_data_map['data'].keys():
+        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'marketplace', 'UNDEFINED')
+
+    print('&&&&&&&&&&&&&&& AFTER IMPUTING MARKETPLACE &&&&&&&&&&&&&&&&&&')   
+    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+    return all_data_map
 
 
 
