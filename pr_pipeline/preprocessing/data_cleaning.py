@@ -1,10 +1,12 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
+
 from .utils import multi_clean_text, get_most_freq_val_for_group, show_missing_values_report, convert_empty_str_to_null, drop_na_for_col, impute_placeholder_when_null_or_empty
 import os
 from pyspark.sql.functions import col, isnan, when, count, udf
 from pyspark.sql.types import StringType
+
 
 
 
@@ -48,7 +50,7 @@ def read_in_data(path_to_data: str):
         elif "marketplace" in file_name:
             data_spark_aux[file_name] = read_marketplace(full_path)
 
-    data_spark["train"] = stack_csvs(train_paths)
+    data_spark["train"] = stack_csvs(train_paths).drop("c0")
     data_spark["test"] = stack_csvs(test_paths)
     data_spark["validation"] = stack_csvs(validation_paths)
 
@@ -84,17 +86,13 @@ def read_marketplace(full_path: str):
 def stack_csvs(paths: list):
     """Concatenates (join) multiple csvs together"""
     stacked_df = (
-        spark.read.option("header", True)
-        .option("inferSchema", True)
-        .option("quote", '"')
+        spark.read.option("quote", '"')
         .option("escape", '"')
         .csv(paths[0], header=True, inferSchema=True)
     )
     for t in paths[:-1]:
         df_pyspark = (
-            spark.read.option("header", True)
-            .option("inferSchema", True)
-            .option("quote", '"')
+            spark.read.option("quote", '"')
             .option("escape", '"')
             .csv(t, header=True, inferSchema=True)
         )
@@ -110,19 +108,19 @@ def clean_reviews(spark_df, columns: list):
 
 
 
-
 # COLUMNS CLEAN/IMPUTE TASK SPLIT:
-    # O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
-    # O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
-    # O-product title: get the title of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no title"
-    # O-vine: get most frequent value for that product id
-    # O-verified_purchase: most frequent value for that product id
+# O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
+# O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
+# O-product title: get the title of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no title"
+# O-vine: get most frequent value for that product id
+# O-verified_purchase: most frequent value for that product id
 
-    # L-review_headline: if missing set to 'no headline' or drop, depending on case
-    # review_body: Julio's code handles that
-    # L-review date: get most frequent timestamp for reviews on this product id, or drop if no products with the same id have a date
-    # L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
-    # L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
+
+# L-review_headline: if missing set to 'no headline' or drop, depending on case
+# review_body: Julio's code handles that
+# L-review date: get most frequent timestamp for reviews on this product id, or drop if no products with the same id have a date
+# L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
+# L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
 
 def join(data, aux, left_on, right_on):
     joined_df = data.join(aux, col(left_on) == col(right_on))
@@ -133,6 +131,7 @@ def join(data, aux, left_on, right_on):
 def clean_data(path_to_data: str):
     """Loads and cleans the data"""
     all_data_map = read_in_data(path_to_data)
+
 
     # this cleans all the String columns, which are review_body, review_headline, and product_title
     # all_data_map["data"]["train"] = clean_reviews(
@@ -195,10 +194,6 @@ def clean_data(path_to_data: str):
 
 
 
+
 if __name__ == "__main__":
     clean_data(path_to_data="data")
-
-
-
-
-
