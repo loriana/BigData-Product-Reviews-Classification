@@ -10,8 +10,13 @@ def main():
         show_missing_vals(args.path_to_data)
 
     if args.preprocess:
-        clean_data(args.path_to_data)
-
+        print("Preprocessing data...")
+        all_data_map = clean_data(args.path_to_data)
+        print("Saving data...")
+        for label in all_data_map["data"].keys():
+            all_data_map["data"][label].write.option("header", True).mode(
+                "overwrite"
+            ).csv(f"./preprocessing_output/{label}")
 
 
 if __name__ == "__main__":
