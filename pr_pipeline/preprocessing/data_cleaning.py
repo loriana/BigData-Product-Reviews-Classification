@@ -2,9 +2,20 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
 
-from .utils import multi_clean_text, get_most_freq_val_for_group, show_missing_values_report, convert_empty_str_to_null, drop_na_for_col, impute_placeholder_when_null_or_empty
+from .utils import (
+    multi_clean_text,
+    get_most_freq_val_for_group,
+    show_missing_values_report,
+    convert_empty_str_to_null,
+    drop_na_for_col,
+    impute_placeholder_when_null_or_empty,
+    convert_day_of_week,
+    convert_yes_no,
+    process_review,
+    impute_common_value_when_null_or_empty,
+)
 import os
-from pyspark.sql.functions import col, isnan, when, count, udf
+from pyspark.sql.functions import col, isnan, when, count, udf, mean
 from pyspark.sql.types import StringType
 
 
@@ -57,7 +68,7 @@ spark.sparkContext.setLogLevel("ERROR")
 def read_category(full_path: str):
     """Converts the categories to a pyspark df"""
     df = spark.read.option("multiline", "false").json(full_path)
-    return df.withColumnRenamed('name', 'product_category')
+    return df.withColumnRenamed("name", "product_category")
 
 
 def read_marketplace(full_path: str):
@@ -77,7 +88,7 @@ def read_marketplace(full_path: str):
     df = df.withColumn("id_name", F.explode(F.arrays_zip("id", "name"))).select(
         "id_name.id", "id_name.name"
     )
-    return df.withColumnRenamed('name', 'marketplace')
+    return df.withColumnRenamed("name", "marketplace")
 
 
 def stack_csvs(paths: list):
@@ -104,7 +115,6 @@ def clean_reviews(spark_df, columns: list):
     return multi_clean_text(columns)(spark_df)
 
 
-
 # COLUMNS CLEAN/IMPUTE TASK SPLIT:
 # O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
 # O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
@@ -119,15 +129,22 @@ def clean_reviews(spark_df, columns: list):
 # L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
 # L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
 
+
 def join(data, aux, left_on, right_on):
     joined_df = data.join(aux, col(left_on) == col(right_on))
-    joined_df = joined_df.drop(right_on) # dropping the joining col cause we have it under another name
+    joined_df = joined_df.drop(
+        right_on
+    )  # dropping the joining col cause we have it under another name
     return joined_df
 
 
 def show_missing_vals(path_to_data: str):
     all_data_map = read_in_data(path_to_data)
-    show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+    show_missing_values_report(
+        all_data_map["data"]["train"],
+        all_data_map["data"]["test"],
+        all_data_map["data"]["validation"],
+    )
 
 
 def clean_data(path_to_data: str):
@@ -135,88 +152,136 @@ def clean_data(path_to_data: str):
     all_data_map = read_in_data(path_to_data)
 
     # clean text columns
-    for label in all_data_map['data'].keys():
-        all_data_map['data'][label] = clean_reviews(
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = clean_reviews(
             all_data_map["data"][label],
             ["product_title", "review_headline", "review_body"],
         )
 
-
     # convert all empty strings to null
-    for label in all_data_map['data'].keys():
-        all_data_map['data'][label] = convert_empty_str_to_null(all_data_map['data'][label])
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = convert_empty_str_to_null(
+            all_data_map["data"][label]
+        )
 
     # show initial report
     # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
-  
 
-    # product_title has very few missing values, so we'll just drop them across train, test, and validation sets
+    # product_title has very few missing values, so we'll just drop them across train, and input empty string for test and validation sets
     # same for the few instances of missing review_body and review_date
-    for label in all_data_map['data'].keys():
-        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'product_title')
-        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'review_body')
-        all_data_map['data'][label] = drop_na_for_col(all_data_map['data'][label], 'review_date')
+    for label in all_data_map["data"].keys():
+        if label in ["test", "validation"]:
+            all_data_map["data"][label] = impute_common_value_when_null_or_empty(
+                all_data_map["data"][label], "marketplace_id"
+            )
+            all_data_map["data"][label] = impute_common_value_when_null_or_empty(
+                all_data_map["data"][label], "product_category_id"
+            )
+            all_data_map["data"][label] = impute_common_value_when_null_or_empty(
+                all_data_map["data"][label], "verified_purchase"
+            )
+            all_data_map["data"][label] = impute_common_value_when_null_or_empty(
+                all_data_map["data"][label], "vine"
+            )
+        else:
+            all_data_map["data"][label] = drop_na_for_col(
+                all_data_map["data"][label], "product_title"
+            )
+            all_data_map["data"][label] = drop_na_for_col(
+                all_data_map["data"][label], "review_body"
+            )
+            all_data_map["data"][label] = drop_na_for_col(
+                all_data_map["data"][label], "review_date"
+            )
 
     # impute missing review headline
-    for label in all_data_map['data'].keys():
-        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'review_headline', '')
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = impute_placeholder_when_null_or_empty(
+            all_data_map["data"][label], "review_headline", ""
+        )
+        all_data_map["data"][label] = impute_placeholder_when_null_or_empty(
+            all_data_map["data"][label], "review_body", ""
+        )
+        all_data_map["data"][label] = impute_placeholder_when_null_or_empty(
+            all_data_map["data"][label], "product_title", ""
+        )
 
     # --> put this last: drop product id column entirely
     # print('&&&&&&&&&&&&&&& AFTER CLEANING &&&&&&&&&&&&&&&&&&')
     # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
-        # join aux data
-    for label in all_data_map['data'].keys():
+    # join aux data
+    for label in all_data_map["data"].keys():
         # product category aux data
-        all_data_map['data'][label] = join(all_data_map['data'][label],
-                                         all_data_map['aux']['category'],
-                                         'product_category_id', 'id')
+        all_data_map["data"][label] = join(
+            all_data_map["data"][label],
+            all_data_map["aux"]["category"],
+            "product_category_id",
+            "id",
+        )
         # marketplace aux data
-        all_data_map['data'][label] = join(all_data_map['data'][label],
-                                         all_data_map['aux']['marketplace'],
-                                         'marketplace_id', 'id')
-        
-    # print('&&&&&&&&&&&&&&& AFTER JOINING &&&&&&&&&&&&&&&&&&')    
+        all_data_map["data"][label] = join(
+            all_data_map["data"][label],
+            all_data_map["aux"]["marketplace"],
+            "marketplace_id",
+            "id",
+        )
+
+    # print('&&&&&&&&&&&&&&& AFTER JOINING &&&&&&&&&&&&&&&&&&')
     # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
 
-    for label in all_data_map['data'].keys():
-        all_data_map['data'][label] = impute_placeholder_when_null_or_empty(all_data_map['data'][label], 'marketplace', 'UNDEFINED')
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = impute_placeholder_when_null_or_empty(
+            all_data_map["data"][label], "marketplace", "UNDEFINED"
+        )
 
-    # print('&&&&&&&&&&&&&&& AFTER IMPUTING MARKETPLACE &&&&&&&&&&&&&&&&&&')   
+    # print('&&&&&&&&&&&&&&& AFTER IMPUTING MARKETPLACE &&&&&&&&&&&&&&&&&&')
     # show_missing_values_report(all_data_map['data']['train'], all_data_map['data']['test'], all_data_map['data']['validation'])
+
+    # convert Y/N values in verified_purchase and vine columns to 0/1
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = convert_yes_no(
+            all_data_map["data"][label], "verified_purchase"
+        )
+        all_data_map["data"][label] = convert_yes_no(
+            all_data_map["data"][label], "vine"
+        )
+
+    # get day of week from review_date and input missing
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = convert_day_of_week(
+            all_data_map["data"][label], "review_date"
+        )
+        all_data_map["data"][label] = impute_common_value_when_null_or_empty(
+            all_data_map["data"][label], "review_date_day_of_week"
+        )
+
+    # Get length of text fields
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = process_review(
+            all_data_map["data"][label], "review_headline", 0.95
+        )
+        all_data_map["data"][label] = process_review(
+            all_data_map["data"][label], "review_body", 0.95
+        )
+
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = all_data_map["data"][label].select(
+            col("_c0"),
+            col("product_id"),
+            col("product_title"),
+            col("review_headline"),
+            col("review_body"),
+            col("marketplace_id"),
+            col("product_category_id"),
+            col("verified_purchase"),
+            col("vine"),
+            col("review_date_day_of_week"),
+            col("review_headline_length"),
+            col("review_body_length"),
+        )
 
     return all_data_map
-
-#convert yes no to integers 1 and 0
-  def convert_yes_no(df, column):
-    return df.withColumn(column + "_exp", F.when(F.col(column).eqNullSafe("Y"), 1).otherwise(0)).drop(column).withColumnRenamed(column + "_exp", column)
-
-#extract day of week from data
-  def convert_day_of_week(df, column):
-    return (df
-    .withColumn(column + "_day_of_week_num", F.dayofweek(column))
-    .withColumn(column + "_day_of_week", 
-        F.when(F.col(column + "_day_of_week_num") == 1, "SUNDAY")
-        .when(F.col(column + "_day_of_week_num") == 2, "MONDAY")
-        .when(F.col(column + "_day_of_week_num") == 3, "TUESDAY")
-        .when(F.col(column + "_day_of_week_num") == 4, "WEDNESDAY")
-        .when(F.col(column + "_day_of_week_num") == 5, "THRUSDAY")
-        .when(F.col(column + "_day_of_week_num") == 6, "FRIDAY")
-        .when(F.col(column + "_day_of_week_num") == 7, "SATURDAY")
-        )
-    .drop(column + "_day_of_week_num")
-    )
-
-data_path = "/".join(os.getcwd().split("\\")[:-2] + ["data"])
-
-df = spark.read.options(quote =  '"', escape = '"', inferSchema = True, header = True).csv(data_path + "/train*")
-
-df = convert_yes_no(df, "verified_purchase")
-df = convert_yes_no(df, "vine")
-
-df = convert_day_of_week(df, "review_date")
-
-df.write.mode("overwrite").options(quote =  '"', escape = '"', header = True).csv(data_path + "/output")
 
 
 if __name__ == "__main__":
