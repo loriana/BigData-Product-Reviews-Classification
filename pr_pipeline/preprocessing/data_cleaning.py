@@ -8,13 +8,10 @@ from pyspark.sql.functions import col, isnan, when, count, udf
 from pyspark.sql.types import StringType
 
 
-
-
 spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 
 
-def read_in_data(path_to_data: str):
     """
     Iterates through the files in the data directory, and converts them to spark data structures
     ------------------------------------------------------
@@ -190,7 +187,36 @@ def clean_data(path_to_data: str):
 
     return all_data_map
 
+#convert yes no to integers 1 and 0
+  def convert_yes_no(df, column):
+    return df.withColumn(column + "_exp", F.when(F.col(column).eqNullSafe("Y"), 1).otherwise(0)).drop(column).withColumnRenamed(column + "_exp", column)
 
+#extract day of week from data
+  def convert_day_of_week(df, column):
+    return (df
+    .withColumn(column + "_day_of_week_num", F.dayofweek(column))
+    .withColumn(column + "_day_of_week", 
+        F.when(F.col(column + "_day_of_week_num") == 1, "SUNDAY")
+        .when(F.col(column + "_day_of_week_num") == 2, "MONDAY")
+        .when(F.col(column + "_day_of_week_num") == 3, "TUESDAY")
+        .when(F.col(column + "_day_of_week_num") == 4, "WEDNESDAY")
+        .when(F.col(column + "_day_of_week_num") == 5, "THRUSDAY")
+        .when(F.col(column + "_day_of_week_num") == 6, "FRIDAY")
+        .when(F.col(column + "_day_of_week_num") == 7, "SATURDAY")
+        )
+    .drop(column + "_day_of_week_num")
+    )
+
+data_path = "/".join(os.getcwd().split("\\")[:-2] + ["data"])
+
+df = spark.read.options(quote =  '"', escape = '"', inferSchema = True, header = True).csv(data_path + "/train*")
+
+df = convert_yes_no(df, "verified_purchase")
+df = convert_yes_no(df, "vine")
+
+df = convert_day_of_week(df, "review_date")
+
+df.write.mode("overwrite").options(quote =  '"', escape = '"', header = True).csv(data_path + "/output")
 
 
 if __name__ == "__main__":
