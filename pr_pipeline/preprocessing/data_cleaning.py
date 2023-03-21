@@ -23,7 +23,6 @@ spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 
 
-def read_in_data(path_to_data: str):
     """
     Iterates through the files in the data directory, and converts them to spark data structures
     ------------------------------------------------------
