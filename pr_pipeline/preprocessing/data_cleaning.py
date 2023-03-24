@@ -13,6 +13,7 @@ from .utils import (
     convert_yes_no,
     process_review,
     impute_common_value_when_null_or_empty,
+    get_gpt_score_col
 )
 import os
 from pyspark.sql.functions import col, isnan, when, count, udf, mean
@@ -22,7 +23,7 @@ from pyspark.sql.types import StringType
 spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 
-
+def read_in_data(path_to_data: str):
     """
     Iterates through the files in the data directory, and converts them to spark data structures
     ------------------------------------------------------
@@ -115,20 +116,6 @@ def clean_reviews(spark_df, columns: list):
     return multi_clean_text(columns)(spark_df)
 
 
-# COLUMNS CLEAN/IMPUTE TASK SPLIT:
-# O-product_id: we drop the whole column regardless, cause it's not so informative and if it has missing values, there's no good way to impute
-# O-product parent: get the parent of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no parent"
-# O-product title: get the title of a product with the same id (from another review of this product), if none is found, then depending on the case, drop row or use a filler like "no title"
-# O-vine: get most frequent value for that product id
-# O-verified_purchase: most frequent value for that product id
-
-
-# L-review_headline: if missing set to 'no headline' or drop, depending on case
-# review_body: Julio's code handles that
-# L-review date: get most frequent timestamp for reviews on this product id, or drop if no products with the same id have a date
-# L-marketplace_id: set it to the most frequent marketplace for this product id's reviews, but would be cool to also decide based on the review body's language
-# L-product_category_id: set it to the prod cat id of other reviews for this product id, else either drop or use a filler value like "no category id" depending on case
-
 
 def join(data, aux, left_on, right_on):
     joined_df = data.join(aux, col(left_on) == col(right_on))
@@ -145,6 +132,7 @@ def show_missing_vals(path_to_data: str):
         all_data_map["data"]["test"],
         all_data_map["data"]["validation"],
     )
+
 
 
 def clean_data(path_to_data: str):
@@ -265,6 +253,11 @@ def clean_data(path_to_data: str):
             all_data_map["data"][label], "review_body", 0.95
         )
 
+    # get openAI score
+    for label in all_data_map["data"].keys():
+        all_data_map["data"][label] = get_gpt_score_col(all_data_map["data"][label])
+
+
     for label in all_data_map["data"].keys():
         all_data_map["data"][label] = all_data_map["data"][label].select(
             col("_c0"),
@@ -279,7 +272,9 @@ def clean_data(path_to_data: str):
             col("review_date_day_of_week"),
             col("review_headline_length"),
             col("review_body_length"),
+            col("GPT_score")
         )
+
 
     return all_data_map
 

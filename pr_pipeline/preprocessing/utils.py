@@ -15,8 +15,9 @@ from pyspark.sql.functions import (
     desc,
     mean,
 )
-from pyspark.sql.types import StringType
+from pyspark.sql.types import StringType, IntegerType
 from pyspark.sql.window import Window
+from .openai_feature_gen import get_chatgpt_score
 
 
 def remove_html(text):
@@ -215,6 +216,12 @@ def convert_day_of_week(df, column):
         .drop(column + "_day_of_week_num")
     )
 
+
+
+gpt_score_udf = udf(get_chatgpt_score, IntegerType())
+def get_gpt_score_col(df):
+    new_df = df.withColumn('GPT_score', gpt_score_udf('product_title', 'review_body'))
+    return new_df
 
 def process_review(df, column, percentile):
     tdf = df.withColumn(column + "_length", length(column))
