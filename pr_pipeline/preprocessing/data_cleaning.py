@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import col
+from textblob import TextBlob
 
 from .utils import (
     multi_clean_text,
@@ -13,6 +14,9 @@ from .utils import (
     convert_yes_no,
     process_review,
     impute_common_value_when_null_or_empty,
+    convert_true_false,
+    calc_sentiment, 
+    calc_sentiment_multi
 )
 import os
 from pyspark.sql.functions import col, isnan, when, count, udf, mean
@@ -22,7 +26,7 @@ from pyspark.sql.types import StringType
 spark = SparkSession.builder.appName("merging and cleaning").getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 
-
+def read_in_data(path_to_data: str):
     """
     Iterates through the files in the data directory, and converts them to spark data structures
     ------------------------------------------------------
@@ -111,6 +115,11 @@ def stack_csvs(paths: list):
 def clean_reviews(spark_df, columns: list):
     """Cleans the title and head of the reviews"""
 
+    # Custom UDF with select()
+    return calc_sentiment_multi(columns)(spark_df)
+
+
+def return_sentiment(spark_df, columns: list):
     # Custom UDF with select()
     return multi_clean_text(columns)(spark_df)
 
@@ -246,6 +255,14 @@ def clean_data(path_to_data: str):
         all_data_map["data"][label] = convert_yes_no(
             all_data_map["data"][label], "vine"
         )
+    
+
+
+    all_data_map["data"]['train'] = convert_true_false(
+        all_data_map["data"]['train'], "label"
+    )
+       
+
 
     # get day of week from review_date and input missing
     for label in all_data_map["data"].keys():
@@ -265,22 +282,58 @@ def clean_data(path_to_data: str):
             all_data_map["data"][label], "review_body", 0.95
         )
 
-    for label in all_data_map["data"].keys():
-        all_data_map["data"][label] = all_data_map["data"][label].select(
-            col("_c0"),
-            col("product_id"),
-            col("product_title"),
-            col("review_headline"),
-            col("review_body"),
-            col("marketplace_id"),
-            col("product_category_id"),
-            col("verified_purchase"),
-            col("vine"),
-            col("review_date_day_of_week"),
-            col("review_headline_length"),
-            col("review_body_length"),
+
+    all_data_map["data"]['test'] = all_data_map["data"]['test'].select(
+        col("_c0"),
+        col("product_id"),
+        col("product_title"),
+        col("review_headline"),
+        col("review_body"),
+        col("marketplace_id"),
+        col("product_category_id"),
+        col("verified_purchase"),
+        col("vine"),
+        col("review_date_day_of_week"),
+        col("review_headline_length"),
+        col("review_body_length"),
+        col('sentiment_review')
+    )
+    
+    all_data_map["data"]['validation'] = all_data_map["data"]['validation'].select(
+        col("_c0"),
+        col("product_id"),
+        col("product_title"),
+        col("review_headline"),
+        col("review_body"),
+        col("marketplace_id"),
+        col("product_category_id"),
+        col("verified_purchase"),
+        col("vine"),
+        col("review_date_day_of_week"),
+        col("review_headline_length"),
+        col("review_body_length"),
+        col('sentiment_review')
+    )
+
+    
+    all_data_map["data"]['train'] = all_data_map["data"]['train'].select(
+        col("_c0"),
+        col("product_id"),
+        col("product_title"),
+        col("review_headline"),
+        col("review_body"),
+        col("marketplace_id"),
+        col("product_category_id"),
+        col("verified_purchase"),
+        col("vine"),
+        col("review_date_day_of_week"),
+        col("review_headline_length"),
+        col("review_body_length"),
+        col('sentiment_review'),
+        col("label")
         )
 
+        
     return all_data_map
 
 

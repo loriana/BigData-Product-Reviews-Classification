@@ -1,7 +1,9 @@
 import re
 import string
+from textblob import TextBlob
+from pyspark.sql.types import FloatType
 
-# Convert function to udf
+# Convert function to 
 from pyspark.sql.functions import (
     col,
     udf,
@@ -22,8 +24,6 @@ from pyspark.sql.window import Window
 def remove_html(text):
     html = re.compile(r"<.*?>")
     return html.sub(r"", text)
-
-
 def remove_emoji(text):
     emoji_pattern = re.compile(
         "["
@@ -38,6 +38,15 @@ def remove_emoji(text):
     )
     return emoji_pattern.sub(r"", text)
 
+
+def convert_yes_no(df, column):
+    return (
+        df.withColumn(
+            column + "_exp", when(col(column).eqNullSafe("Y"), 1).otherwise(0)
+        )
+        .drop(column)
+        .withColumnRenamed(column + "_exp", column)
+    )
 
 def remove_nonspeech(text):
     clean_text = re.sub(r"[^a-zA-Z0-9\'\s\w\b\.,;\(\)]+", "", text, re.UNICODE)
@@ -56,6 +65,20 @@ def clean_text(str):
 
 cleantextUDF = udf(lambda x: clean_text(x), StringType())
 
+
+def calc_sentiment(text):
+    sentiment = TextBlob(text).sentiment.polarity
+    return sentiment
+
+sentiment_udf = udf(lambda text: calc_sentiment(text), FloatType())
+
+
+def calc_sentiment_multi(col_names):
+    def inner(df):
+        for col_name in col_names:
+            df = df.withColumn('sentiment_review', sentiment_udf(col(col_name)))
+        return df
+    return inner
 
 def multi_clean_text(col_names):
     def inner(df):
@@ -207,6 +230,14 @@ def convert_yes_no(df, column):
         .withColumnRenamed(column + "_exp", column)
     )
 
+def convert_true_false(df, column):
+    return (
+        df.withColumn(
+            column + "_exp", when(col(column).eqNullSafe("True"), 1).otherwise(0)
+        )
+        .drop(column)
+        .withColumnRenamed(column + "_exp", column)
+    )
 
 def convert_day_of_week(df, column):
     return (
