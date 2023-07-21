@@ -1,7 +1,7 @@
 import openai
 import time
 
-OPENAI_API_KEY = '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'
+OPENAI_API_KEY = ''
 MODEL_ENGINE = "text-davinci-003"
 QUESTION = (
     "Can you please write this text in chronological order and make it more readable?"
